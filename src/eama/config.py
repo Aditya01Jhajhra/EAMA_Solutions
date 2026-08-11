@@ -15,6 +15,7 @@ class AnalysisConfig:
     minimum_history_days: int = 7
     z_score_threshold: float = 3.0
     minimum_relative_change: float = 0.30
+    analysis_frequency: str = "D"
 
 
 def load_config(path: str | Path) -> AnalysisConfig:

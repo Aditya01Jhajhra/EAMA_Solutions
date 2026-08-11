@@ -10,6 +10,7 @@
   },
   "metrics": ["sales", "profit", "quantity"],
   "dimensions": ["region", "category"],
+  "analysis_frequency": "W-SUN",
   "rolling_window_days": 14,
   "minimum_history_days": 7,
   "z_score_threshold": 3.0,

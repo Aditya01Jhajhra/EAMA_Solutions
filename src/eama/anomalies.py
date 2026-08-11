@@ -33,18 +33,30 @@ def detect_anomalies(
     frame: pd.DataFrame,
     config: AnalysisConfig,
 ) -> pd.DataFrame:
-    """Detect unusual daily KPI values against a prior rolling baseline."""
+    """Detect KPI deviations against a prior rolling baseline."""
     findings: list[dict[str, object]] = []
+
+    analysis_frame = frame.copy()
+
+    analysis_frame["period"] = (
+        analysis_frame["date"]
+        .dt.to_period(config.analysis_frequency)
+        .dt.end_time
+        .dt.normalize()
+    )
 
     for dimension in config.dimensions:
         for metric in config.metrics:
-            daily = (
-                frame.groupby([dimension, "date"], as_index=False)[metric]
+            grouped_data = (
+                analysis_frame.groupby(
+                    [dimension, "period"],
+                    as_index=False,
+                )[metric]
                 .sum()
-                .sort_values([dimension, "date"])
+                .sort_values([dimension, "period"])
             )
 
-            for dimension_value, group in daily.groupby(
+            for dimension_value, group in grouped_data.groupby(
                 dimension,
                 sort=False,
             ):
@@ -87,7 +99,7 @@ def detect_anomalies(
                 for position in z_score.index[flagged]:
                     findings.append(
                         {
-                            "date": group.iloc[position]["date"],
+                            "date": group.iloc[position]["period"],
                             "dimension": dimension,
                             "dimension_value": dimension_value,
                             "metric": metric,
