@@ -6,6 +6,7 @@ from pathlib import Path
 from .anomalies import detect_anomalies
 from .config import load_config
 from .ingestion import prepare_dataset, read_tabular_file
+from .summaries import format_business_summary
 
 
 def main() -> None:
@@ -50,9 +51,20 @@ def main() -> None:
     print(f"Detected {len(findings):,} anomalies.")
     print(f"Saved report to: {output_path}")
 
-    if not findings.empty:
-        print("\nTop findings:")
-        print(findings.head(10).to_string(index=False))
+    high_priority = findings[
+        findings["severity"] == "high"
+    ]
+
+    if high_priority.empty:
+        print("\nNo high-priority anomalies found.")
+    else:
+        print(
+            f"\nHigh-priority business summaries "
+            f"({len(high_priority)}):"
+        )
+
+        for _, finding in high_priority.iterrows():
+            print(f"\n- {format_business_summary(finding)}")
 
 
 if __name__ == "__main__":
