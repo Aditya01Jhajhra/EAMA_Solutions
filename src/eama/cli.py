@@ -4,9 +4,10 @@ import argparse
 from pathlib import Path
 
 from .anomalies import detect_anomalies
+from .business_alerts import create_business_alerts
 from .config import load_config
 from .ingestion import prepare_dataset, read_tabular_file
-from .summaries import format_business_summary
+from .reporting import create_excel_report
 
 
 def main() -> None:
@@ -47,24 +48,41 @@ def main() -> None:
 
     findings.to_csv(output_path, index=False)
 
+    business_alerts = create_business_alerts(findings)
+
+    alerts_output_path = output_path.with_name(
+        "business_alerts.csv"
+    )
+
+    business_alerts.to_csv(alerts_output_path, index=False)
+
+    excel_report_path = output_path.with_name(
+        "EAMA_Weekly_Alert_Report.xlsx"
+    )
+
+    create_excel_report(
+        findings,
+        business_alerts,
+        excel_report_path,
+    )
+
     print(f"Loaded {len(prepared_data):,} records.")
     print(f"Detected {len(findings):,} anomalies.")
-    print(f"Saved report to: {output_path}")
+    print(f"Saved anomaly report to: {output_path}")
+    print(
+        f"Created {len(business_alerts):,} consolidated "
+        f"high-priority business alerts."
+    )
+    print(f"Saved business alerts to: {alerts_output_path}")
+    print(f"Saved Excel report to: {excel_report_path}")
 
-    high_priority = findings[
-        findings["severity"] == "high"
-    ]
-
-    if high_priority.empty:
-        print("\nNo high-priority anomalies found.")
+    if business_alerts.empty:
+        print("\nNo high-priority business alerts found.")
     else:
-        print(
-            f"\nHigh-priority business summaries "
-            f"({len(high_priority)}):"
-        )
+        print("\nBusiness alerts:")
 
-        for _, finding in high_priority.iterrows():
-            print(f"\n- {format_business_summary(finding)}")
+        for _, alert in business_alerts.iterrows():
+            print(f"\n- {alert['summary']}")
 
 
 if __name__ == "__main__":
