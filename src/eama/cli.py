@@ -6,6 +6,7 @@ from pathlib import Path
 from .anomalies import detect_anomalies
 from .business_alerts import create_business_alerts
 from .config import load_config
+from .email_drafts import create_email_drafts, save_email_drafts
 from .ingestion import prepare_dataset, read_tabular_file
 from .reporting import create_excel_report
 
@@ -66,6 +67,15 @@ def main() -> None:
         excel_report_path,
     )
 
+    email_drafts = create_email_drafts(
+        business_alerts,
+        excel_report_path,
+    )
+
+    email_drafts_dir = output_path.parent / "email_drafts"
+
+    save_email_drafts(email_drafts, email_drafts_dir)
+
     print(f"Loaded {len(prepared_data):,} records.")
     print(f"Detected {len(findings):,} anomalies.")
     print(f"Saved anomaly report to: {output_path}")
@@ -75,6 +85,10 @@ def main() -> None:
     )
     print(f"Saved business alerts to: {alerts_output_path}")
     print(f"Saved Excel report to: {excel_report_path}")
+    print(
+        f"Created {len(email_drafts):,} email drafts in: "
+        f"{email_drafts_dir}"
+    )
 
     if business_alerts.empty:
         print("\nNo high-priority business alerts found.")
