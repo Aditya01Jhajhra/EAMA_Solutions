@@ -4,7 +4,6 @@ import pandas as pd
 
 from .config import AnalysisConfig
 
-
 FINDING_COLUMNS = [
     "date",
     "dimension",
@@ -22,10 +21,8 @@ def get_severity(z_score: float) -> str:
     """Assign a business priority based on anomaly strength."""
     if abs(z_score) >= 5:
         return "high"
-
     if abs(z_score) >= 4:
         return "medium"
-
     return "low"
 
 
@@ -35,9 +32,7 @@ def detect_anomalies(
 ) -> pd.DataFrame:
     """Detect KPI deviations against a prior rolling baseline."""
     findings: list[dict[str, object]] = []
-
     analysis_frame = frame.copy()
-
     analysis_frame["period"] = (
         analysis_frame["date"]
         .dt.to_period(config.analysis_frequency)
@@ -47,12 +42,14 @@ def detect_anomalies(
 
     for dimension in config.dimensions:
         for metric in config.metrics:
+            aggregation = config.aggregation_for(metric)
+
             grouped_data = (
                 analysis_frame.groupby(
                     [dimension, "period"],
                     as_index=False,
                 )[metric]
-                .sum()
+                .agg(aggregation)
                 .sort_values([dimension, "period"])
             )
 
@@ -61,37 +58,30 @@ def detect_anomalies(
                 sort=False,
             ):
                 values = group[metric].astype(float).reset_index(drop=True)
-
                 baseline = values.shift(1).rolling(
                     window=config.rolling_window_days,
                     min_periods=config.minimum_history_days,
                 )
-
                 baseline_mean = baseline.mean()
                 baseline_std = baseline.std(ddof=0)
-
                 relative_change = (
                     (values - baseline_mean)
                     / baseline_mean.abs().replace(0, pd.NA)
                 )
-
                 z_score = (
                     (values - baseline_mean)
                     / baseline_std.replace(0, pd.NA)
                 )
-
                 flat_baseline_change = (
                     baseline_std.eq(0)
                     & relative_change.abs().ge(
                         config.minimum_relative_change
                     )
                 )
-
                 z_score = z_score.mask(
                     flat_baseline_change,
                     float("inf"),
                 )
-
                 flagged = z_score.abs().ge(
                     config.z_score_threshold
                 ).fillna(False)
