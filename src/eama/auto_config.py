@@ -5,19 +5,40 @@ from pathlib import Path
 
 import pandas as pd
 
+from .ingestion import clean_numeric_series
+
 
 def _looks_like_date_column(series: pd.Series) -> bool:
     if pd.api.types.is_datetime64_any_dtype(series):
         return True
+
+    # Plain numeric columns (prices, counts, etc.) will "successfully"
+    # parse as datetimes because pandas treats bare numbers as
+    # nanosecond offsets from 1970-01-01. That's a false positive, not
+    # a real date column, so rule numeric dtypes out up front.
+    if pd.api.types.is_numeric_dtype(series):
+        return False
+
     sample = series.dropna().head(50)
     if sample.empty:
         return False
+
     parsed = pd.to_datetime(sample, errors="coerce")
-    return parsed.notna().mean() > 0.9
+    valid = parsed.dropna()
+    if valid.empty:
+        return False
+
+    # Sanity check: real business dates fall in a plausible calendar
+    # range. This catches numeric-like strings that technically parse
+    # but land near the 1970 epoch, another symptom of the same
+    # false-positive pattern.
+    in_range = valid.dt.year.between(1990, 2100)
+
+    return bool(parsed.notna().mean() > 0.9 and in_range.mean() > 0.9)
 
 
 def _looks_like_metric_column(series: pd.Series) -> bool:
-    numeric = pd.to_numeric(series, errors="coerce")
+    numeric = clean_numeric_series(series)
     return numeric.notna().mean() > 0.9
 
 
@@ -31,15 +52,24 @@ def _looks_like_dimension_column(
     series: pd.Series,
     max_unique_ratio: float = 0.1,
     max_unique_values: int = 20,
+    small_sample_threshold: int = 50,
 ) -> bool:
     non_null = series.dropna()
     if non_null.empty:
         return False
+
     unique_count = non_null.nunique()
-    return (
-        unique_count <= max_unique_values
-        and (unique_count / len(non_null)) <= max_unique_ratio
-    )
+    if unique_count > max_unique_values:
+        return False
+
+    # On small datasets, a ratio-based cap is unreliable (e.g. 2 unique
+    # values out of 8 rows is 25%, but 2 categories is still a
+    # perfectly reasonable dimension). Fall back to the absolute count
+    # check alone below this sample size.
+    if len(non_null) < small_sample_threshold:
+        return True
+
+    return (unique_count / len(non_null)) <= max_unique_ratio
 
 
 def _looks_like_rate_metric(column_name: str, series: pd.Series) -> bool:
@@ -58,7 +88,7 @@ def _looks_like_rate_metric(column_name: str, series: pd.Series) -> bool:
     if any(keyword in normalized for keyword in rate_keywords):
         return True
 
-    numeric = pd.to_numeric(series, errors="coerce").dropna()
+    numeric = clean_numeric_series(series).dropna()
     if numeric.empty:
         return False
 

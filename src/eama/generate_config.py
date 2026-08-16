@@ -43,11 +43,49 @@ def main() -> None:
         f"{', '.join(config['dimensions']) or '(none found)'}"
     )
     print(f"\nSaved generated config to: {config_path}")
-    print(
-        "\nReview this file before using it — check that the metrics "
-        "and dimensions look right, and adjust minimum_relative_change "
-        "or z_score_threshold if needed."
+
+    warnings: list[str] = []
+
+    if not config["metrics"]:
+        warnings.append(
+            "No numeric metric columns were detected. EAMA will not "
+            "be able to find anomalies without at least one metric. "
+            "Check that your KPI columns contain numeric values."
+        )
+
+    if not config["dimensions"]:
+        warnings.append(
+            "No grouping dimension was detected. This usually means "
+            "every categorical column either looks like an identifier "
+            "(e.g. a name or ID) or has too many unique values to be "
+            "a useful business category. EAMA will not produce any "
+            "findings without at least one dimension. You can add one "
+            "manually to the generated config, for example by setting "
+            "'dimensions' and 'column_mapping' for a suitable column."
+        )
+
+    minimum_rows_needed = (
+        config["rolling_window_days"] + config["minimum_history_days"]
     )
+    if len(raw_data) < minimum_rows_needed:
+        warnings.append(
+            f"This file has {len(raw_data):,} rows, but detecting "
+            f"anomalies needs roughly {minimum_rows_needed:,} rows of "
+            f"history per group to build a baseline. With less data "
+            f"than that, EAMA may find few or no anomalies until more "
+            f"data accumulates."
+        )
+
+    if warnings:
+        print("\n⚠ Review before using this config:")
+        for warning in warnings:
+            print(f"  - {warning}")
+    else:
+        print(
+            "\nReview this file before using it — check that the "
+            "metrics and dimensions look right, and adjust "
+            "minimum_relative_change or z_score_threshold if needed."
+        )
 
 
 if __name__ == "__main__":
