@@ -8,6 +8,7 @@ from .business_alerts import create_business_alerts
 from .config import load_config
 from .email_drafts import create_email_drafts, save_email_drafts
 from .ingestion import prepare_dataset, read_tabular_file
+from .pdf_report import create_pdf_report
 from .reporting import create_excel_report
 
 
@@ -67,6 +68,16 @@ def main() -> None:
         excel_report_path,
     )
 
+    pdf_report_path = output_path.with_name(
+        "EAMA_Weekly_Alert_Report.pdf"
+    )
+
+    create_pdf_report(
+        findings,
+        business_alerts,
+        pdf_report_path,
+    )
+
     email_drafts = create_email_drafts(
         business_alerts,
         excel_report_path,
@@ -85,6 +96,7 @@ def main() -> None:
     )
     print(f"Saved business alerts to: {alerts_output_path}")
     print(f"Saved Excel report to: {excel_report_path}")
+    print(f"Saved PDF report to: {pdf_report_path}")
     print(
         f"Created {len(email_drafts):,} email drafts in: "
         f"{email_drafts_dir}"
