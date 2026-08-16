@@ -170,3 +170,39 @@ def save_inferred_config(config: dict, output_path: str | Path) -> Path:
     with output_path.open("w", encoding="utf-8") as file:
         json.dump(config, file, indent=2)
     return output_path
+
+def config_warnings(config: dict, row_count: int) -> list[str]:
+    """Flag risky auto-detected configs instead of failing silently."""
+    warnings: list[str] = []
+
+    if not config["metrics"]:
+        warnings.append(
+            "No numeric metric columns were detected. EAMA will not "
+            "be able to find anomalies without at least one metric. "
+            "Check that your KPI columns contain numeric values."
+        )
+
+    if not config["dimensions"]:
+        warnings.append(
+            "No grouping dimension was detected. This usually means "
+            "every categorical column either looks like an identifier "
+            "(e.g. a name or ID) or has too many unique values to be "
+            "a useful business category. EAMA will not produce any "
+            "findings without at least one dimension. You can add one "
+            "manually to the saved config, for example by setting "
+            "'dimensions' and 'column_mapping' for a suitable column."
+        )
+
+    minimum_rows_needed = (
+        config["rolling_window_days"] + config["minimum_history_days"]
+    )
+    if row_count < minimum_rows_needed:
+        warnings.append(
+            f"This file has {row_count:,} rows, but detecting "
+            f"anomalies needs roughly {minimum_rows_needed:,} rows of "
+            f"history per group to build a baseline. With less data "
+            f"than that, EAMA may find few or no anomalies until more "
+            f"data accumulates."
+        )
+
+    return warnings

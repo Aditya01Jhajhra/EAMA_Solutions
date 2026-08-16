@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .alert_history import append_to_history, filter_new_alerts, load_alert_history
 from .anomalies import detect_anomalies
+from .auto_config import config_warnings, infer_config, save_inferred_config
 from .business_alerts import create_business_alerts
 from .config import load_config
 from .email_drafts import create_email_drafts, save_email_drafts
@@ -26,8 +27,13 @@ def main() -> None:
 
     parser.add_argument(
         "--config",
-        required=True,
-        help="Path to the EAMA JSON configuration file.",
+        required=False,
+        default=None,
+        help=(
+            "Path to an EAMA JSON configuration file. If omitted, "
+            "EAMA will inspect the input file and generate a config "
+            "automatically."
+        ),
     )
 
     parser.add_argument(
@@ -38,16 +44,50 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    config = load_config(args.config)
-
     raw_data = read_tabular_file(args.input)
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.config:
+        config = load_config(args.config)
+    else:
+        print(
+            "No --config provided. Inspecting the input file and "
+            "generating a config automatically...\n"
+        )
+
+        inferred = infer_config(raw_data)
+
+        auto_config_path = output_path.with_name(
+            f"{Path(args.input).stem}_auto_config.json"
+        )
+
+        save_inferred_config(inferred, auto_config_path)
+
+        print(f"Detected date column: {inferred['date_column']}")
+        print(
+            f"Detected metrics: "
+            f"{', '.join(inferred['metrics']) or '(none found)'}"
+        )
+        print(
+            f"Detected dimensions: "
+            f"{', '.join(inferred['dimensions']) or '(none found)'}"
+        )
+        print(f"Saved auto-generated config to: {auto_config_path}\n")
+
+        warnings = config_warnings(inferred, len(raw_data))
+        if warnings:
+            print("⚠ Review the auto-generated config before trusting results:")
+            for warning in warnings:
+                print(f"  - {warning}")
+            print()
+
+        config = load_config(auto_config_path)
 
     prepared_data = prepare_dataset(raw_data, config)
 
     findings = detect_anomalies(prepared_data, config)
-
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     findings.to_csv(output_path, index=False)
 
