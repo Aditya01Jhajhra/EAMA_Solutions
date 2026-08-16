@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .alert_history import append_to_history, filter_new_alerts, load_alert_history
 from .anomalies import detect_anomalies
 from .business_alerts import create_business_alerts
 from .config import load_config
@@ -52,6 +53,14 @@ def main() -> None:
 
     business_alerts = create_business_alerts(findings)
 
+    history_path = Path("data/state/alert_history.csv")
+
+    alert_history = load_alert_history(history_path)
+
+    new_business_alerts = filter_new_alerts(business_alerts, alert_history)
+
+    append_to_history(new_business_alerts, alert_history, history_path)
+
     alerts_output_path = output_path.with_name(
         "business_alerts.csv"
     )
@@ -79,7 +88,7 @@ def main() -> None:
     )
 
     email_drafts = create_email_drafts(
-        business_alerts,
+        new_business_alerts,
         excel_report_path,
     )
 
@@ -92,7 +101,11 @@ def main() -> None:
     print(f"Saved anomaly report to: {output_path}")
     print(
         f"Created {len(business_alerts):,} consolidated "
-        f"high-priority business alerts."
+        f"high-priority business alerts this run."
+    )
+    print(
+        f"{len(new_business_alerts):,} of those are new "
+        f"(not previously seen)."
     )
     print(f"Saved business alerts to: {alerts_output_path}")
     print(f"Saved Excel report to: {excel_report_path}")
@@ -102,12 +115,12 @@ def main() -> None:
         f"{email_drafts_dir}"
     )
 
-    if business_alerts.empty:
-        print("\nNo high-priority business alerts found.")
+    if new_business_alerts.empty:
+        print("\nNo new high-priority business alerts found.")
     else:
-        print("\nBusiness alerts:")
+        print("\nNew business alerts:")
 
-        for _, alert in business_alerts.iterrows():
+        for _, alert in new_business_alerts.iterrows():
             print(f"\n- {alert['summary']}")
 
 
