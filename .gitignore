@@ -7,3 +7,9 @@ data/raw/*
 data/outputs/*
 !data/raw/.gitkeep
 !data/outputs/.gitkeep
+# EAMA-specific ignores
+data/state/
+config/*_auto_config.json
+config/auto_generated_test.json
+config/website_traffic_auto.json
+config/website_traffic_daily.json
