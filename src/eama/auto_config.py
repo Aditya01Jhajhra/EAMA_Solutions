@@ -23,7 +23,11 @@ def _looks_like_date_column(series: pd.Series) -> bool:
     if sample.empty:
         return False
 
-    parsed = pd.to_datetime(sample, errors="coerce")
+    # format="mixed" parses each value independently instead of
+    # requiring one consistent format across the whole column, so a
+    # column mixing "2023-01-01", "01/02/2023", and "03-Jan-2023"
+    # still gets recognized rather than mostly failing to parse.
+    parsed = pd.to_datetime(sample, errors="coerce", format="mixed")
     valid = parsed.dropna()
     if valid.empty:
         return False
@@ -43,8 +47,30 @@ def _looks_like_metric_column(series: pd.Series) -> bool:
 
 
 def _looks_like_identifier_column(column_name: str) -> bool:
+    """Flag columns that look like identifiers rather than dimensions.
+
+    This keyword list is English-first with a best-effort set of
+    common translations (Spanish, French, German, Portuguese, Italian)
+    for "name", "code", "description", and similar terms. It is not
+    exhaustive and won't catch every language -- a low-cardinality
+    identifier-like column in an uncovered language can still slip
+    through as a dimension. Review auto-generated configs for
+    non-English datasets accordingly.
+    """
     normalized = column_name.strip().lower()
-    excluded_keywords = ("name", "id", "sku", "code", "description")
+    excluded_keywords = (
+        "name", "id", "sku", "code", "description",
+        # Spanish
+        "nombre", "código", "codigo", "descripción", "descripcion",
+        # French
+        "nom", "identifiant", "code", "description",
+        # German
+        "name", "kennung", "code", "beschreibung",
+        # Portuguese
+        "nome", "código", "codigo", "descrição", "descricao",
+        # Italian
+        "nome", "codice", "descrizione",
+    )
     return any(keyword in normalized for keyword in excluded_keywords)
 
 

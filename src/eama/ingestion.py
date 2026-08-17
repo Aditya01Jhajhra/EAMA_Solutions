@@ -7,8 +7,18 @@ import pandas as pd
 from .config import AnalysisConfig
 
 
-def read_tabular_file(path: str | Path) -> pd.DataFrame:
-    """Read a CSV or Excel file."""
+def read_tabular_file(
+    path: str | Path,
+    sheet_name: str | int = 0,
+) -> pd.DataFrame:
+    """Read a CSV or Excel file.
+
+    For Excel files with more than one sheet, only one sheet is read
+    (the first, by default). A warning is printed naming every sheet
+    and which one was used, so multi-sheet data is never silently
+    dropped without the user knowing. Pass sheet_name to read a
+    different sheet.
+    """
     source = Path(path)
 
     if not source.exists():
@@ -18,8 +28,25 @@ def read_tabular_file(path: str | Path) -> pd.DataFrame:
 
     if file_type == ".csv":
         return pd.read_csv(source)
+
     if file_type in {".xlsx", ".xls"}:
-        return pd.read_excel(source)
+        excel_file = pd.ExcelFile(source)
+        sheet_names = excel_file.sheet_names
+
+        if len(sheet_names) > 1:
+            selected_name = (
+                sheet_names[sheet_name]
+                if isinstance(sheet_name, int)
+                else sheet_name
+            )
+            print(
+                f"⚠ '{source.name}' contains {len(sheet_names)} sheets: "
+                f"{', '.join(sheet_names)}. Only reading '{selected_name}'. "
+                f"Pass a different sheet_name to read_tabular_file if "
+                f"that isn't the sheet you want."
+            )
+
+        return pd.read_excel(source, sheet_name=sheet_name)
 
     raise ValueError("EAMA accepts .csv, .xlsx, and .xls files")
 
@@ -67,7 +94,9 @@ def prepare_dataset(
         }
     ).copy()
 
-    prepared["date"] = pd.to_datetime(prepared["date"], errors="coerce")
+    prepared["date"] = pd.to_datetime(
+        prepared["date"], errors="coerce", format="mixed"
+    )
 
     if prepared["date"].isna().any():
         invalid_count = int(prepared["date"].isna().sum())
