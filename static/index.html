@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EAMA — Anomaly Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --black:#000000;
+    --white:#FAFAFA;
+    --panel:#FFFFFF;
+    --ink:#0A0A0A;
+    --muted:#8A8A8A;
+    --dot:#E5E7EB;
+    --line:#E0E0E0;
+    --red:#FF0000;
+    --red-soft:#FFE5E5;
+    --mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:var(--white);
+    background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color:var(--ink);
+    font-family:var(--sans);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:760px;
+    margin:0 auto;
+    padding:0 24px 96px;
+  }
+  header{
+    position:sticky;
+    top:0;
+    z-index:10;
+    background:rgba(250,250,250,0.72);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid rgba(0,0,0,0.08);
+    margin:0 -24px 36px;
+    padding:20px 24px;
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+  }
+  .brand{
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:-0.02em;
+    text-transform:uppercase;
+  }
+  .brand span{ color:var(--red); }
+  header p{
+    margin:6px 0 0;
+    font-size:12px;
+    color:var(--muted);
+    font-family:var(--mono);
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+  }
+  .status-dot{
+    width:7px; height:7px; border-radius:50%;
+    background:var(--ink);
+    display:inline-block;
+    margin-right:6px;
+    animation:glyph-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes glyph-pulse{
+    0%{ opacity:1; }
+    50%{ opacity:0.25; }
+    100%{ opacity:1; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .status-dot{ animation:none; }
+  }
+
+  .top-space{ height:32px; }
+
+  .steps{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    margin-bottom:32px;
+    font-family:var(--mono);
+    font-size:11px;
+  }
+  .steps div{
+    background:var(--panel);
+    padding:14px 16px;
+    color:var(--muted);
+  }
+  .steps div b{
+    display:block;
+    color:var(--ink);
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    margin-bottom:2px;
+  }
+  .steps div.active{ background:var(--black); }
+  .steps div.active, .steps div.active b{ color:#fff; }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    padding:28px;
+    margin-bottom:24px;
+  }
+  .drop{
+    border:1.5px dashed #C7C7C7;
+    padding:36px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .drop:hover, .drop.drag{
+    border-color:var(--ink);
+    background:var(--dot);
+  }
+  .drop p{ margin:0; font-size:14px; color:var(--muted); }
+  .drop strong{ color:var(--ink); font-weight:700; }
+  .drop .ext{
+    font-family:var(--mono);
+    font-size:10.5px;
+    color:var(--muted);
+    margin-top:8px;
+    letter-spacing:0.04em;
+  }
+  input[type=file]{ display:none; }
+
+  .filename{
+    font-family:var(--mono);
+    font-size:13px;
+    margin-top:14px;
+    color:var(--ink);
+    display:none;
+  }
+
+  button.run{
+    margin-top:18px;
+    width:100%;
+    background:var(--black);
+    color:#fff;
+    border:none;
+    border-radius:4px;
+    padding:13px 18px;
+    font-family:var(--sans);
+    font-weight:600;
+    font-size:13px;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+    cursor:pointer;
+    transition:background .2s ease, transform .2s ease;
+  }
+  button.run:hover{ background:#2b2b2b; transform:translateY(-1px); }
+  button.run:disabled{ background:#C7C7C7; color:#8A8A8A; cursor:not-allowed; transform:none; }
+
+  .console{
+    font-family:var(--mono);
+    font-size:12px;
+    background:#000;
+    color:#EDEDED;
+    padding:18px 20px;
+    display:none;
+    white-space:pre-wrap;
+    line-height:1.8;
+    border-radius:4px;
+  }
+  .console .line{
+    overflow:hidden;
+    white-space:nowrap;
+    width:0;
+    animation:scan-reveal .4s steps(30,end) forwards;
+  }
+  @keyframes scan-reveal{ to{ width:100%; } }
+  @media (prefers-reduced-motion: reduce){
+    .console .line{ animation:none; width:100%; }
+  }
+  .console .ok{ color:#fff; font-weight:700; }
+  .console .warn{ color:var(--red); font-weight:700; }
+
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    display:none;
+  }
+  .stat{
+    background:var(--panel);
+    padding:18px 14px;
+    text-align:center;
+  }
+  .stat .num{
+    font-family:var(--mono);
+    font-size:26px;
+    font-weight:700;
+    letter-spacing:-0.02em;
+  }
+  .stat.high .num{ color:var(--red); }
+  .stat .label{
+    font-size:10.5px;
+    color:var(--muted);
+    margin-top:4px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+  }
+
+  .alerts{ display:none; }
+  .alerts h2{
+    font-family:var(--mono);
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+    margin:32px 0 12px;
+  }
+  .alert-card{
+    border:1px solid var(--ink);
+    border-left:4px solid var(--red);
+    background:var(--panel);
+    padding:14px 16px;
+    margin-bottom:10px;
+    font-size:13.5px;
+    border-radius:4px;
+  }
+  .alert-card.new::after{
+    content:"● NEW";
+    font-family:var(--mono);
+    font-size:10px;
+    font-weight:700;
+    color:var(--red);
+    float:right;
+    letter-spacing:0.04em;
+  }
+  .empty-alert{
+    color:var(--muted);
+    font-size:13.5px;
+    font-family:var(--mono);
+  }
+
+  .downloads{ display:none; margin-top:28px; }
+  .downloads h2{
+    font-family:var(--mono);
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+    margin:0 0 12px;
+  }
+  .dl-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .dl-row a{
+    display:block;
+    text-align:center;
+    border:1px solid var(--ink);
+    border-radius:4px;
+    padding:12px 8px;
+    font-family:var(--mono);
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink);
+    text-decoration:none;
+    text-transform:uppercase;
+    letter-spacing:0.02em;
+    transition:background .15s ease, color .15s ease;
+  }
+  .dl-row a:hover{
+    background:var(--black);
+    color:#fff;
+  }
+
+  .error{
+    display:none;
+    border:1px solid var(--red);
+    border-left:4px solid var(--red);
+    background:var(--red-soft);
+    border-radius:4px;
+    padding:14px 16px;
+    font-size:13.5px;
+    color:#8A0000;
+    margin-bottom:24px;
+  }
+  .error b{ display:block; margin-bottom:2px; font-family:var(--mono); text-transform:uppercase; font-size:12px; letter-spacing:0.03em; }
+
+  footer{
+    margin-top:48px;
+    font-family:var(--mono);
+    font-size:10.5px;
+    color:var(--muted);
+    text-align:center;
+    letter-spacing:0.03em;
+  }
+
+  @media (max-width:520px){
+    .steps, .stats, .dl-row{ grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="brand">EAMA<span>·</span>MONITOR</div>
+      <p><span class="status-dot" id="statusDot"></span><span id="statusText">idle</span></p>
+    </div>
+  </header>
+
+  <div class="steps">
+    <div class="active" id="step1"><b>01 Upload</b>CSV or Excel file</div>
+    <div id="step2"><b>02 Detect</b>Columns &amp; anomalies</div>
+    <div id="step3"><b>03 Review</b>Alerts &amp; reports</div>
+  </div>
+
+  <div class="error" id="errorBox">
+    <b>Could not process this file</b>
+    <span id="errorMsg"></span>
+  </div>
+
+  <div class="panel">
+    <div class="drop" id="dropZone">
+      <p><strong>Choose a file</strong> or drag it here</p>
+      <div class="ext">.CSV · .XLSX · .XLS</div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+    <div class="filename" id="fileName"></div>
+    <button class="run" id="runBtn" disabled>Select a file to begin</button>
+  </div>
+
+  <div class="console" id="console"></div>
+
+  <div class="stats" id="stats">
+    <div class="stat"><div class="num" id="statRecords">–</div><div class="label">Records</div></div>
+    <div class="stat"><div class="num" id="statAnomalies">–</div><div class="label">Anomalies</div></div>
+    <div class="stat high"><div class="num" id="statAlerts">–</div><div class="label">Alerts</div></div>
+    <div class="stat"><div class="num" id="statNew">–</div><div class="label">New</div></div>
+  </div>
+
+  <div class="alerts" id="alertsSection">
+    <h2>Business alerts</h2>
+    <div id="alertsList"></div>
+  </div>
+
+  <div class="downloads" id="downloadsSection">
+    <h2>Reports</h2>
+    <div class="dl-row">
+      <a id="dlPdf" target="_blank">PDF report</a>
+      <a id="dlExcel" target="_blank">Excel report</a>
+      <a id="dlFindings" target="_blank">All findings</a>
+      <a id="dlAlerts" target="_blank">Alerts CSV</a>
+    </div>
+  </div>
+
+  <footer>EAMA — Excel Anomaly Monitoring &amp; Alerting</footer>
+</div>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileName = document.getElementById('fileName');
+  const runBtn = document.getElementById('runBtn');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const step2 = document.getElementById('step2');
+  const step3 = document.getElementById('step3');
+  const errorBox = document.getElementById('errorBox');
+  const errorMsg = document.getElementById('errorMsg');
+  const consoleEl = document.getElementById('console');
+  const statsEl = document.getElementById('stats');
+  const alertsSection = document.getElementById('alertsSection');
+  const alertsList = document.getElementById('alertsList');
+  const downloadsSection = document.getElementById('downloadsSection');
+
+  let selectedFile = null;
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag');
+    if (e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      handleFileSelect();
+    }
+  });
+  fileInput.addEventListener('change', handleFileSelect);
+
+  function handleFileSelect() {
+    if (!fileInput.files.length) return;
+    selectedFile = fileInput.files[0];
+    fileName.textContent = selectedFile.name;
+    fileName.style.display = 'block';
+    runBtn.disabled = false;
+    runBtn.textContent = 'Run analysis';
+  }
+
+  function setStatus(text, dotColor) {
+    statusText.textContent = text;
+    statusDot.style.background = dotColor || 'var(--teal)';
+  }
+
+  function resetResults() {
+    errorBox.style.display = 'none';
+    consoleEl.style.display = 'none';
+    consoleEl.innerHTML = '';
+    statsEl.style.display = 'none';
+    alertsSection.style.display = 'none';
+    downloadsSection.style.display = 'none';
+    step2.classList.remove('active');
+    step3.classList.remove('active');
+  }
+
+  function consoleLine(html, delayMs) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const div = document.createElement('div');
+        div.className = 'line';
+        div.innerHTML = html;
+        consoleEl.appendChild(div);
+        resolve();
+      }, delayMs);
+    });
+  }
+
+  runBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    resetResults();
+    runBtn.disabled = true;
+    runBtn.textContent = 'Analyzing…';
+    setStatus('analyzing', 'var(--amber)');
+    step2.classList.add('active');
+    consoleEl.style.display = 'block';
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await fetch('/api/analyze', { method: 'POST', body: formData });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Something went wrong while analyzing this file.');
+      }
+
+      await consoleLine(`&gt; reading ${selectedFile.name}…`, 100);
+      await consoleLine(`&gt; ${data.records_loaded.toLocaleString()} records loaded`, 250);
+
+      if (data.used_auto_config) {
+        await consoleLine(`&gt; date column: <span class="ok">${data.auto_detected_date_column}</span>`, 250);
+        await consoleLine(`&gt; metrics: <span class="ok">${data.auto_detected_metrics.join(', ') || '(none found)'}</span>`, 200);
+        await consoleLine(`&gt; dimensions: <span class="ok">${data.auto_detected_dimensions.join(', ') || '(none found)'}</span>`, 200);
+        for (const w of data.auto_config_warnings) {
+          await consoleLine(`&gt; <span class="warn">warning: ${w}</span>`, 150);
+        }
+      }
+
+      await consoleLine(`&gt; ${data.anomalies_detected} anomalies detected`, 250);
+      await consoleLine(`&gt; ${data.business_alerts_total} business alert(s), ${data.business_alerts_new} new`, 250);
+      await consoleLine(`&gt; done`, 200);
+
+      document.getElementById('statRecords').textContent = data.records_loaded.toLocaleString();
+      document.getElementById('statAnomalies').textContent = data.anomalies_detected;
+      document.getElementById('statAlerts').textContent = data.business_alerts_total;
+      document.getElementById('statNew').textContent = data.business_alerts_new;
+      statsEl.style.display = 'grid';
+
+      alertsList.innerHTML = '';
+      if (data.all_alert_summaries.length === 0) {
+        alertsList.innerHTML = '<div class="empty-alert">No high-priority business alerts found in this data.</div>';
+      } else {
+        data.all_alert_summaries.forEach((summary, i) => {
+          const isNew = i < data.new_alert_summaries.length && data.new_alert_summaries.includes(summary);
+          const card = document.createElement('div');
+          card.className = 'alert-card' + (isNew ? ' new' : '');
+          card.textContent = summary;
+          alertsList.appendChild(card);
+        });
+      }
+      alertsSection.style.display = 'block';
+
+      document.getElementById('dlPdf').href = data.pdf_report_url;
+      document.getElementById('dlExcel').href = data.excel_report_url;
+      document.getElementById('dlFindings').href = data.findings_csv_url;
+      document.getElementById('dlAlerts').href = data.business_alerts_csv_url;
+      downloadsSection.style.display = 'block';
+
+      step3.classList.add('active');
+      setStatus('done', 'var(--teal)');
+      runBtn.textContent = 'Run again';
+      runBtn.disabled = false;
+
+    } catch (err) {
+      errorMsg.textContent = err.message;
+      errorBox.style.display = 'block';
+      consoleEl.style.display = 'none';
+      setStatus('error', '#B3411E');
+      runBtn.textContent = 'Try again';
+      runBtn.disabled = false;
+      step2.classList.remove('active');
+    }
+  });
+</script>
+</body>
+</html>
