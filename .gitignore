@@ -13,3 +13,7 @@ config/*_auto_config.json
 config/auto_generated_test.json
 config/website_traffic_auto.json
 config/website_traffic_daily.json
+
+# API upload/output folders (generated at runtime)
+data/api_uploads/
+data/api_outputs/
