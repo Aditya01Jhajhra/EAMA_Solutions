@@ -12,10 +12,6 @@ def _looks_like_date_column(series: pd.Series) -> bool:
     if pd.api.types.is_datetime64_any_dtype(series):
         return True
 
-    # Plain numeric columns (prices, counts, etc.) will "successfully"
-    # parse as datetimes because pandas treats bare numbers as
-    # nanosecond offsets from 1970-01-01. That's a false positive, not
-    # a real date column, so rule numeric dtypes out up front.
     if pd.api.types.is_numeric_dtype(series):
         return False
 
@@ -23,19 +19,11 @@ def _looks_like_date_column(series: pd.Series) -> bool:
     if sample.empty:
         return False
 
-    # format="mixed" parses each value independently instead of
-    # requiring one consistent format across the whole column, so a
-    # column mixing "2023-01-01", "01/02/2023", and "03-Jan-2023"
-    # still gets recognized rather than mostly failing to parse.
     parsed = pd.to_datetime(sample, errors="coerce", format="mixed")
     valid = parsed.dropna()
     if valid.empty:
         return False
 
-    # Sanity check: real business dates fall in a plausible calendar
-    # range. This catches numeric-like strings that technically parse
-    # but land near the 1970 epoch, another symptom of the same
-    # false-positive pattern.
     in_range = valid.dt.year.between(1990, 2100)
 
     return bool(parsed.notna().mean() > 0.9 and in_range.mean() > 0.9)
@@ -47,31 +35,42 @@ def _looks_like_metric_column(series: pd.Series) -> bool:
 
 
 def _looks_like_identifier_column(column_name: str) -> bool:
-    """Flag columns that look like identifiers rather than dimensions.
-
-    This keyword list is English-first with a best-effort set of
-    common translations (Spanish, French, German, Portuguese, Italian)
-    for "name", "code", "description", and similar terms. It is not
-    exhaustive and won't catch every language -- a low-cardinality
-    identifier-like column in an uncovered language can still slip
-    through as a dimension. Review auto-generated configs for
-    non-English datasets accordingly.
-    """
     normalized = column_name.strip().lower()
     excluded_keywords = (
         "name", "id", "sku", "code", "description",
-        # Spanish
         "nombre", "código", "codigo", "descripción", "descripcion",
-        # French
-        "nom", "identifiant", "code", "description",
-        # German
-        "name", "kennung", "code", "beschreibung",
-        # Portuguese
-        "nome", "código", "codigo", "descrição", "descricao",
-        # Italian
-        "nome", "codice", "descrizione",
+        "nom", "identifiant",
+        "kennung", "beschreibung",
+        "nome", "descrição", "descricao",
+        "codice", "descrizione",
+        # Geographic / location identifiers -- these describe *where*
+        # a record is, not a business category to group and monitor
+        # trends by (e.g. grouping anomalies by individual street
+        # address is close to meaningless).
+        "street", "address", "zip", "postal", "latitude", "longitude",
+        "lat", "lng",
     )
     return any(keyword in normalized for keyword in excluded_keywords)
+
+
+def _looks_like_categorical_code(
+    series: pd.Series,
+    max_unique_values: int = 10,
+) -> bool:
+    """Flag numeric columns that are really categorical codes or
+    flags (e.g. a 0/1 waterfront flag, a 1-5 condition rating) rather
+    than a continuous KPI worth monitoring for anomalies. These should
+    be treated as a grouping dimension, if anything, not summed or
+    averaged as a metric.
+    """
+    numeric = clean_numeric_series(series).dropna()
+    if numeric.empty:
+        return False
+
+    all_whole_numbers = (numeric % 1 == 0).all()
+    unique_count = numeric.nunique()
+
+    return bool(all_whole_numbers and unique_count <= max_unique_values)
 
 
 def _looks_like_dimension_column(
@@ -88,10 +87,6 @@ def _looks_like_dimension_column(
     if unique_count > max_unique_values:
         return False
 
-    # On small datasets, a ratio-based cap is unreliable (e.g. 2 unique
-    # values out of 8 rows is 25%, but 2 categories is still a
-    # perfectly reasonable dimension). Fall back to the absolute count
-    # check alone below this sample size.
     if len(non_null) < small_sample_threshold:
         return True
 
@@ -102,14 +97,7 @@ def _looks_like_rate_metric(column_name: str, series: pd.Series) -> bool:
     """Guess whether a metric should be averaged rather than summed."""
     normalized = column_name.strip().lower()
     rate_keywords = (
-        "rate",
-        "percent",
-        "pct",
-        "ratio",
-        "average",
-        "avg",
-        "score",
-        "margin",
+        "rate", "percent", "pct", "ratio", "average", "avg", "score", "margin",
     )
     if any(keyword in normalized for keyword in rate_keywords):
         return True
@@ -154,7 +142,9 @@ def infer_config(
     metric_aggregations: dict[str, str] = {}
 
     for column in remaining_columns:
-        if _looks_like_metric_column(frame[column]):
+        if _looks_like_metric_column(frame[column]) and not (
+            _looks_like_categorical_code(frame[column])
+        ):
             metrics.append(column)
         elif _looks_like_identifier_column(column):
             continue
@@ -196,6 +186,7 @@ def save_inferred_config(config: dict, output_path: str | Path) -> Path:
     with output_path.open("w", encoding="utf-8") as file:
         json.dump(config, file, indent=2)
     return output_path
+
 
 def config_warnings(config: dict, row_count: int) -> list[str]:
     """Flag risky auto-detected configs instead of failing silently."""
