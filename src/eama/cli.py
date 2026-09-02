@@ -33,6 +33,19 @@ def main() -> None:
         help="Path for the generated anomaly report.",
     )
 
+    parser.add_argument(
+        "--send-emails",
+        action="store_true",
+        default=False,
+        help=(
+            "Actually send an email for each new alert via Outlook/"
+            "Office 365 SMTP, using EAMA_SMTP_EMAIL, "
+            "EAMA_SMTP_PASSWORD, and EAMA_ALERT_RECIPIENT environment "
+            "variables. Without this flag, drafts are only written "
+            "to disk."
+        ),
+    )
+
     args = parser.parse_args()
 
     if not args.config:
@@ -45,6 +58,7 @@ def main() -> None:
         input_path=args.input,
         config_path=args.config,
         output_path=args.output,
+        send_emails=args.send_emails,
     )
 
     if result.used_auto_config:
@@ -83,6 +97,13 @@ def main() -> None:
         f"Created {result.email_drafts_created:,} email drafts in: "
         f"{result.email_drafts_dir}"
     )
+
+    if args.send_emails:
+        print(f"Sent {result.emails_sent:,} email(s).")
+        if result.email_send_errors:
+            print("Email sending errors:")
+            for error in result.email_send_errors:
+                print(f"  - {error}")
 
     if not result.new_alert_summaries:
         print("\nNo new high-priority business alerts found.")

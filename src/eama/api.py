@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import shutil
+import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -23,6 +24,26 @@ UPLOAD_DIR = Path("data/api_uploads")
 OUTPUT_DIR = Path("data/api_outputs")
 STATIC_DIR = Path("static")
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+
+MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
+UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
+JOB_RETENTION_DAYS = 7
+
+
+def _cleanup_old_jobs() -> None:
+    """Delete upload/output folders older than JOB_RETENTION_DAYS.
+
+    Runs opportunistically at the start of each /api/analyze call
+    rather than on a schedule, since this is a lightweight personal
+    API rather than a long-running service with a task scheduler.
+    """
+    cutoff = time.time() - (JOB_RETENTION_DAYS * 86400)
+    for base_dir in (UPLOAD_DIR, OUTPUT_DIR):
+        if not base_dir.exists():
+            continue
+        for job_dir in base_dir.iterdir():
+            if job_dir.is_dir() and job_dir.stat().st_mtime < cutoff:
+                shutil.rmtree(job_dir, ignore_errors=True)
 
 
 @app.get("/")
@@ -47,6 +68,9 @@ class AnalyzeResponse(BaseModel):
     new_alert_summaries: list[str]
     all_alert_summaries: list[str]
 
+    emails_sent: int
+    email_send_errors: list[str]
+
     used_auto_config: bool
     auto_detected_date_column: str | None
     auto_detected_metrics: list[str]
@@ -60,11 +84,17 @@ class AnalyzeResponse(BaseModel):
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
-async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
+async def analyze(
+    file: UploadFile = File(...),
+    send_emails: bool = Form(False),
+) -> AnalyzeResponse:
     """Upload a CSV/XLSX/XLS file and run the full EAMA pipeline on it.
 
     No config is required -- EAMA inspects the file and generates one
     automatically, the same way `eama.cli` behaves without --config.
+    Set send_emails=true to actually email new alerts via Office 365
+    SMTP (requires EAMA_SMTP_EMAIL, EAMA_SMTP_PASSWORD, and
+    EAMA_ALERT_RECIPIENT to be set as environment variables).
     """
     original_suffix = Path(file.filename or "").suffix.lower()
 
@@ -77,6 +107,8 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
             ),
         )
 
+    _cleanup_old_jobs()
+
     job_id = uuid.uuid4().hex[:12]
 
     job_upload_dir = UPLOAD_DIR / job_id
@@ -86,14 +118,31 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
 
     saved_input_path = job_upload_dir / f"input{original_suffix}"
 
-    with saved_input_path.open("wb") as destination:
-        shutil.copyfileobj(file.file, destination)
+    total_bytes = 0
+    try:
+        with saved_input_path.open("wb") as destination:
+            while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            f"File too large. Maximum upload size is "
+                            f"{MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB."
+                        ),
+                    )
+                destination.write(chunk)
+    except HTTPException:
+        shutil.rmtree(job_upload_dir, ignore_errors=True)
+        shutil.rmtree(job_output_dir, ignore_errors=True)
+        raise
 
     try:
         result = run_pipeline(
             input_path=saved_input_path,
             config_path=None,
             output_path=job_output_dir / "anomalies.csv",
+            send_emails=send_emails,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -107,6 +156,8 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
         email_drafts_created=result.email_drafts_created,
         new_alert_summaries=result.new_alert_summaries,
         all_alert_summaries=result.all_alert_summaries,
+        emails_sent=result.emails_sent,
+        email_send_errors=result.email_send_errors,
         used_auto_config=result.used_auto_config,
         auto_detected_date_column=result.auto_detected_date_column,
         auto_detected_metrics=result.auto_detected_metrics,
@@ -141,8 +192,6 @@ async def download(job_id: str, report_type: str) -> FileResponse:
 
     filename, media_type = _DOWNLOAD_FILES[report_type]
 
-    # job_id comes from a URL path segment; keep it to safe characters
-    # only so it can't be used to escape OUTPUT_DIR (e.g. "../../etc").
     if not job_id.isalnum():
         raise HTTPException(status_code=400, detail="Invalid job_id.")
 

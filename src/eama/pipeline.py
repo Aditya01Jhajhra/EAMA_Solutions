@@ -11,6 +11,7 @@ from .auto_config import config_warnings, infer_config, save_inferred_config
 from .business_alerts import create_business_alerts
 from .config import load_config
 from .email_drafts import create_email_drafts, save_email_drafts
+from .email_sender import send_alert_emails
 from .ingestion import prepare_dataset, read_tabular_file
 from .pdf_report import create_pdf_report
 from .reporting import create_excel_report
@@ -38,6 +39,9 @@ class PipelineResult:
     new_alert_summaries: list[str] = field(default_factory=list)
     all_alert_summaries: list[str] = field(default_factory=list)
 
+    emails_sent: int = 0
+    email_send_errors: list[str] = field(default_factory=list)
+
     used_auto_config: bool = False
     auto_config_path: Path | None = None
     auto_detected_date_column: str | None = None
@@ -51,14 +55,15 @@ def run_pipeline(
     config_path: str | Path | None = None,
     output_path: str | Path = "data/outputs/anomalies.csv",
     history_path: str | Path = "data/state/alert_history.csv",
+    send_emails: bool = False,
 ) -> PipelineResult:
     """Run the full EAMA pipeline and return a structured result.
 
     This is the single source of truth for what "running EAMA" means:
     ingest -> (auto-)configure -> detect -> consolidate -> de-duplicate
-    against history -> report (Excel + PDF) -> draft emails. Both
-    cli.py and api.py call this directly rather than duplicating any
-    of this logic.
+    against history -> report (Excel + PDF) -> draft emails -> (optionally)
+    send emails. Both cli.py and api.py call this directly rather than
+    duplicating any of this logic.
     """
     raw_data = read_tabular_file(input_path)
 
@@ -131,6 +136,12 @@ def run_pipeline(
 
     save_email_drafts(email_drafts, email_drafts_dir)
 
+    emails_sent = 0
+    email_send_errors: list[str] = []
+
+    if send_emails:
+        emails_sent, email_send_errors = send_alert_emails(email_drafts)
+
     new_alert_summaries = (
         []
         if new_business_alerts.empty
@@ -156,6 +167,8 @@ def run_pipeline(
         email_drafts_dir=email_drafts_dir,
         new_alert_summaries=new_alert_summaries,
         all_alert_summaries=all_alert_summaries,
+        emails_sent=emails_sent,
+        email_send_errors=email_send_errors,
         used_auto_config=used_auto_config,
         auto_config_path=auto_config_path,
         auto_detected_date_column=auto_detected_date_column,
