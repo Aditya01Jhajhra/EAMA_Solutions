@@ -54,15 +54,29 @@ def _looks_like_identifier_column(column_name: str) -> bool:
 
 
 def _looks_like_categorical_code(
+    column_name: str,
     series: pd.Series,
-    max_unique_values: int = 10,
+    max_unique_values: int = 6,
 ) -> bool:
     """Flag numeric columns that are really categorical codes or
     flags (e.g. a 0/1 waterfront flag, a 1-5 condition rating) rather
-    than a continuous KPI worth monitoring for anomalies. These should
-    be treated as a grouping dimension, if anything, not summed or
-    averaged as a metric.
+    than a continuous KPI worth monitoring for anomalies.
+
+    Cardinality alone can't tell a rating scale (1-5) apart from a
+    genuine small-range count like order quantity (also often 1-10),
+    so this requires either a name that clearly suggests a flag/rating,
+    or a truly binary (0/1 style) range, not low cardinality alone.
     """
+    normalized = column_name.strip().lower()
+
+    measurement_keywords = (
+        "quantity", "qty", "count", "units", "amount", "volume",
+        "num", "number", "sales", "revenue", "profit", "price",
+        "cost", "total", "sessions", "clicks", "impressions",
+    )
+    if any(keyword in normalized for keyword in measurement_keywords):
+        return False
+
     numeric = clean_numeric_series(series).dropna()
     if numeric.empty:
         return False
@@ -70,7 +84,17 @@ def _looks_like_categorical_code(
     all_whole_numbers = (numeric % 1 == 0).all()
     unique_count = numeric.nunique()
 
-    return bool(all_whole_numbers and unique_count <= max_unique_values)
+    if not (all_whole_numbers and unique_count <= max_unique_values):
+        return False
+
+    flag_keywords = (
+        "flag", "waterfront", "condition", "rating", "grade", "tier",
+        "level", "status", "stars", "view", "is_", "has_",
+    )
+    name_suggests_flag = any(keyword in normalized for keyword in flag_keywords)
+    is_binary = unique_count <= 2
+
+    return bool(name_suggests_flag or is_binary)
 
 
 def _looks_like_dimension_column(
@@ -143,7 +167,7 @@ def infer_config(
 
     for column in remaining_columns:
         if _looks_like_metric_column(frame[column]) and not (
-            _looks_like_categorical_code(frame[column])
+            _looks_like_categorical_code(column, frame[column])
         ):
             metrics.append(column)
         elif _looks_like_identifier_column(column):
