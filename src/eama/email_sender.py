@@ -12,18 +12,26 @@ class EmailSendError(Exception):
     """Raised when EAMA cannot send an alert email."""
 
 
-def _get_smtp_credentials() -> tuple[str, str, str]:
-    """Read sender/recipient credentials from environment variables.
+def _get_smtp_credentials() -> tuple[str, str, str, str, int]:
+    """Read SMTP settings from environment variables.
 
     Credentials are never hard-coded or logged. Set these before using
     --send-emails:
-        EAMA_SMTP_EMAIL       -- the Outlook/Office 365 address to send from
+        EAMA_SMTP_EMAIL       -- the address to send from
         EAMA_SMTP_PASSWORD    -- its password or app password
         EAMA_ALERT_RECIPIENT  -- where alert emails should be sent
+        EAMA_SMTP_SERVER      -- optional, defaults to smtp.office365.com
+        EAMA_SMTP_PORT        -- optional, defaults to 587
+
+    For Gmail, set EAMA_SMTP_SERVER=smtp.gmail.com and use a Google
+    App Password (myaccount.google.com/apppasswords) as
+    EAMA_SMTP_PASSWORD -- Gmail will not accept your normal password.
     """
     sender_email = os.environ.get("EAMA_SMTP_EMAIL")
     sender_password = os.environ.get("EAMA_SMTP_PASSWORD")
     recipient_email = os.environ.get("EAMA_ALERT_RECIPIENT")
+    smtp_server = os.environ.get("EAMA_SMTP_SERVER", "smtp.office365.com")
+    smtp_port = int(os.environ.get("EAMA_SMTP_PORT", "587"))
 
     missing = [
         name
@@ -42,17 +50,18 @@ def _get_smtp_credentials() -> tuple[str, str, str]:
             "using --send-emails."
         )
 
-    return sender_email, sender_password, recipient_email
+    return sender_email, sender_password, recipient_email, smtp_server, smtp_port
 
 
-def send_alert_email(
-    subject: str,
-    body: str,
-    smtp_server: str = "smtp.office365.com",
-    smtp_port: int = 587,
-) -> None:
-    """Send a single alert email via Outlook/Office 365 SMTP."""
-    sender_email, sender_password, recipient_email = _get_smtp_credentials()
+def send_alert_email(subject: str, body: str) -> None:
+    """Send a single alert email via SMTP (Office 365 or Gmail)."""
+    (
+        sender_email,
+        sender_password,
+        recipient_email,
+        smtp_server,
+        smtp_port,
+    ) = _get_smtp_credentials()
 
     message = MIMEMultipart()
     message["From"] = sender_email
@@ -69,11 +78,15 @@ def send_alert_email(
             )
     except smtplib.SMTPAuthenticationError as error:
         raise EmailSendError(
-            "Authentication failed. If your Microsoft account uses "
+            "Authentication failed. If this is a Gmail address, make "
+            "sure you're using a Google App Password (not your normal "
+            "password) and that EAMA_SMTP_SERVER is set to "
+            "smtp.gmail.com. If this is an Office 365 account with "
             "multi-factor authentication, you likely need an app "
-            "password instead of your normal password. Also confirm "
-            "SMTP AUTH is enabled for this mailbox -- Microsoft "
-            "disables it by default for many Office 365 tenants."
+            "password instead of your normal password, and SMTP AUTH "
+            "must be enabled for the mailbox -- Microsoft disables it "
+            "by default for many tenants, including most student/"
+            "education accounts."
         ) from error
     except (smtplib.SMTPException, OSError) as error:
         raise EmailSendError(f"Failed to send email: {error}") from error
