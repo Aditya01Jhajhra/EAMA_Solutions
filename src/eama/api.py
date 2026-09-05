@@ -87,14 +87,15 @@ class AnalyzeResponse(BaseModel):
 async def analyze(
     file: UploadFile = File(...),
     send_emails: bool = Form(False),
+    user_id: str = Form("default"),
 ) -> AnalyzeResponse:
     """Upload a CSV/XLSX/XLS file and run the full EAMA pipeline on it.
 
     No config is required -- EAMA inspects the file and generates one
     automatically, the same way `eama.cli` behaves without --config.
-    Set send_emails=true to actually email new alerts via Office 365
-    SMTP (requires EAMA_SMTP_EMAIL, EAMA_SMTP_PASSWORD, and
-    EAMA_ALERT_RECIPIENT to be set as environment variables).
+    Set send_emails=true to actually email new alerts. Set user_id to
+    scope alert history so different users/teams don't suppress each
+    other's alerts as "already seen".
     """
     original_suffix = Path(file.filename or "").suffix.lower()
 
@@ -143,6 +144,7 @@ async def analyze(
             config_path=None,
             output_path=job_output_dir / "anomalies.csv",
             send_emails=send_emails,
+            user_id=user_id,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

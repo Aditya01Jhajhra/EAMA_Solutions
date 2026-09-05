@@ -147,6 +147,40 @@
     display:none;
   }
 
+  .user-input{
+    display:none;
+    width:100%;
+    margin-top:14px;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    font-family:var(--mono);
+    font-size:12px;
+    background:var(--panel);
+    color:var(--ink);
+  }
+  .user-input:focus{ outline:none; border-color:var(--ink); }
+  .user-input::placeholder{ color:var(--muted); }
+
+  .send-toggle{
+    display:none;
+    align-items:center;
+    gap:8px;
+    margin-top:14px;
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--muted);
+    cursor:pointer;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+  }
+  .send-toggle input{
+    width:14px;
+    height:14px;
+    accent-color:var(--red);
+    cursor:pointer;
+  }
+
   button.run{
     margin-top:18px;
     width:100%;
@@ -336,6 +370,11 @@
     </div>
     <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
     <div class="filename" id="fileName"></div>
+    <input type="text" id="userIdInput" class="user-input" placeholder="Your name (optional) — keeps your alerts separate from others">
+    <label class="send-toggle">
+      <input type="checkbox" id="sendEmailsToggle">
+      <span>Send email for new alerts</span>
+    </label>
     <button class="run" id="runBtn" disabled>Select a file to begin</button>
   </div>
 
@@ -370,6 +409,8 @@
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   const fileName = document.getElementById('fileName');
+  const userIdInput = document.getElementById('userIdInput');
+  const sendEmailsToggle = document.getElementById('sendEmailsToggle');
   const runBtn = document.getElementById('runBtn');
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
@@ -403,13 +444,15 @@
     selectedFile = fileInput.files[0];
     fileName.textContent = selectedFile.name;
     fileName.style.display = 'block';
+    userIdInput.style.display = 'block';
+    document.querySelector('.send-toggle').style.display = 'flex';
     runBtn.disabled = false;
     runBtn.textContent = 'Run analysis';
   }
 
   function setStatus(text, dotColor) {
     statusText.textContent = text;
-    statusDot.style.background = dotColor || 'var(--teal)';
+    statusDot.style.background = dotColor || 'var(--ink)';
   }
 
   function resetResults() {
@@ -441,12 +484,14 @@
     resetResults();
     runBtn.disabled = true;
     runBtn.textContent = 'Analyzing…';
-    setStatus('analyzing', 'var(--amber)');
+    setStatus('analyzing', 'var(--red)');
     step2.classList.add('active');
     consoleEl.style.display = 'block';
 
     const formData = new FormData();
     formData.append('file', selectedFile);
+    formData.append('send_emails', sendEmailsToggle.checked ? 'true' : 'false');
+    formData.append('user_id', userIdInput.value.trim() || 'default');
 
     try {
       const response = await fetch('/api/analyze', { method: 'POST', body: formData });
@@ -470,6 +515,14 @@
 
       await consoleLine(`&gt; ${data.anomalies_detected} anomalies detected`, 250);
       await consoleLine(`&gt; ${data.business_alerts_total} business alert(s), ${data.business_alerts_new} new`, 250);
+
+      if (sendEmailsToggle.checked) {
+        await consoleLine(`&gt; ${data.emails_sent} email(s) sent`, 250);
+        for (const err of data.email_send_errors) {
+          await consoleLine(`&gt; <span class="warn">email error: ${err}</span>`, 150);
+        }
+      }
+
       await consoleLine(`&gt; done`, 200);
 
       document.getElementById('statRecords').textContent = data.records_loaded.toLocaleString();
@@ -499,7 +552,7 @@
       downloadsSection.style.display = 'block';
 
       step3.classList.add('active');
-      setStatus('done', 'var(--teal)');
+      setStatus('done', 'var(--ink)');
       runBtn.textContent = 'Run again';
       runBtn.disabled = false;
 

@@ -38,11 +38,21 @@ def main() -> None:
         action="store_true",
         default=False,
         help=(
-            "Actually send an email for each new alert via Outlook/"
-            "Office 365 SMTP, using EAMA_SMTP_EMAIL, "
-            "EAMA_SMTP_PASSWORD, and EAMA_ALERT_RECIPIENT environment "
-            "variables. Without this flag, drafts are only written "
-            "to disk."
+            "Actually send an email for each new alert via SMTP, "
+            "using EAMA_SMTP_EMAIL, EAMA_SMTP_PASSWORD, "
+            "EAMA_ALERT_RECIPIENT (and optionally EAMA_SMTP_SERVER / "
+            "EAMA_SMTP_PORT for non-Office-365 providers like Gmail). "
+            "Without this flag, drafts are only written to disk."
+        ),
+    )
+
+    parser.add_argument(
+        "--user",
+        default="default",
+        help=(
+            "Scopes alert history to this user/team, so different "
+            "people uploading the same or overlapping data don't "
+            "suppress each other's alerts as 'already seen'."
         ),
     )
 
@@ -59,6 +69,7 @@ def main() -> None:
         config_path=args.config,
         output_path=args.output,
         send_emails=args.send_emails,
+        user_id=args.user,
     )
 
     if result.used_auto_config:

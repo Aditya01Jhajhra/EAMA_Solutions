@@ -54,7 +54,8 @@ def run_pipeline(
     input_path: str | Path,
     config_path: str | Path | None = None,
     output_path: str | Path = "data/outputs/anomalies.csv",
-    history_path: str | Path = "data/state/alert_history.csv",
+    history_path: str | Path | None = None,
+    user_id: str = "default",
     send_emails: bool = False,
 ) -> PipelineResult:
     """Run the full EAMA pipeline and return a structured result.
@@ -64,6 +65,12 @@ def run_pipeline(
     against history -> report (Excel + PDF) -> draft emails -> (optionally)
     send emails. Both cli.py and api.py call this directly rather than
     duplicating any of this logic.
+
+    user_id scopes alert history so different users/teams uploading the
+    same or overlapping data don't suppress each other's "new" alerts.
+    The default user's history file keeps its original filename
+    (data/state/alert_history.csv) for backward compatibility; any
+    other user gets their own alert_history_<user_id>.csv.
     """
     raw_data = read_tabular_file(input_path)
 
@@ -105,7 +112,23 @@ def run_pipeline(
 
     business_alerts = create_business_alerts(findings)
 
-    history_path = Path(history_path)
+    safe_user_id = (
+        "".join(ch for ch in user_id if ch.isalnum() or ch in ("-", "_"))
+        or "default"
+    )
+
+    if history_path is None:
+        if safe_user_id == "default":
+            # Preserve the original filename for the default user so
+            # existing history from before per-user support isn't
+            # orphaned and re-treated as "new".
+            history_path = Path("data/state/alert_history.csv")
+        else:
+            history_path = (
+                Path("data/state") / f"alert_history_{safe_user_id}.csv"
+            )
+    else:
+        history_path = Path(history_path)
 
     alert_history = load_alert_history(history_path)
 
