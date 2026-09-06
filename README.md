@@ -223,11 +223,11 @@ web page), and has been stress-tested against messy, real-world-shaped data acro
 several unrelated domains.
 
 **Not yet built:**
-- Per-user alert history — all users/uploads currently share one global
-  de-duplication history, which is fine for a single person but would need
-  rework if this is ever used by more than one person.
 - AI-generated business summaries — alert text is currently template-based, not
   model-generated.
+- Deployment beyond localhost — EAMA currently only runs on your own machine
+  (`127.0.0.1`); making it reachable elsewhere (a shared server, cloud hosting)
+  hasn't been set up.
 - Further edge-case coverage — every new real-world dataset tested so far has
   surfaced at least one genuine detection bug; this is treated as an ongoing
   process rather than something that is ever fully "finished."
@@ -245,3 +245,25 @@ several unrelated domains.
   count metric (e.g. order quantity, often also 1–10) can look statistically
   identical. EAMA uses column-name keywords to tell them apart; an unusually named
   column of either kind may still need a manual config override.
+
+
+
+## Per-user alert history
+
+By default, everyone shares one alert history file (`data/state/alert_history.csv`),
+so re-running EAMA on the same data won't re-notify you on alerts you've already
+seen. If more than one person is using EAMA against overlapping data, scope each
+person's history separately so they don't suppress each other's "new" alerts:
+
+**Command line:**
+```powershell
+.\.venv\Scripts\python.exe -m eama.cli --input "data/raw/your_file.csv" --output data/outputs/anomalies.csv --user alice
+```
+
+**Web interface:** type a name into the "Your name (optional)" field before running.
+
+**API:** include a `user_id` form field with your `/api/analyze` request.
+
+Each named user gets their own `data/state/alert_history_<user_id>.csv`. The
+default user keeps the original `alert_history.csv` filename, so nothing changes
+for existing single-user setups.
