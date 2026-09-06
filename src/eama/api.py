@@ -71,6 +71,9 @@ class AnalyzeResponse(BaseModel):
     emails_sent: int
     email_send_errors: list[str]
 
+    ai_summaries_generated: int
+    ai_summary_errors: list[str]
+
     used_auto_config: bool
     auto_detected_date_column: str | None
     auto_detected_metrics: list[str]
@@ -88,6 +91,7 @@ async def analyze(
     file: UploadFile = File(...),
     send_emails: bool = Form(False),
     user_id: str = Form("default"),
+    use_ai_summaries: bool = Form(False),
 ) -> AnalyzeResponse:
     """Upload a CSV/XLSX/XLS file and run the full EAMA pipeline on it.
 
@@ -95,7 +99,9 @@ async def analyze(
     automatically, the same way `eama.cli` behaves without --config.
     Set send_emails=true to actually email new alerts. Set user_id to
     scope alert history so different users/teams don't suppress each
-    other's alerts as "already seen".
+    other's alerts as "already seen". Set use_ai_summaries=true to
+    replace template alert text with Gemini-generated summaries
+    (requires GEMINI_API_KEY).
     """
     original_suffix = Path(file.filename or "").suffix.lower()
 
@@ -145,6 +151,7 @@ async def analyze(
             output_path=job_output_dir / "anomalies.csv",
             send_emails=send_emails,
             user_id=user_id,
+            use_ai_summaries=use_ai_summaries,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -160,6 +167,8 @@ async def analyze(
         all_alert_summaries=result.all_alert_summaries,
         emails_sent=result.emails_sent,
         email_send_errors=result.email_send_errors,
+        ai_summaries_generated=result.ai_summaries_generated,
+        ai_summary_errors=result.ai_summary_errors,
         used_auto_config=result.used_auto_config,
         auto_detected_date_column=result.auto_detected_date_column,
         auto_detected_metrics=result.auto_detected_metrics,

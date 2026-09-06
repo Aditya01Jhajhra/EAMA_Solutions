@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .ai_summary import enhance_alerts_with_ai_summaries
 from .alert_history import append_to_history, filter_new_alerts, load_alert_history
 from .anomalies import detect_anomalies
 from .auto_config import config_warnings, infer_config, save_inferred_config
@@ -42,6 +43,9 @@ class PipelineResult:
     emails_sent: int = 0
     email_send_errors: list[str] = field(default_factory=list)
 
+    ai_summaries_generated: int = 0
+    ai_summary_errors: list[str] = field(default_factory=list)
+
     used_auto_config: bool = False
     auto_config_path: Path | None = None
     auto_detected_date_column: str | None = None
@@ -57,14 +61,16 @@ def run_pipeline(
     history_path: str | Path | None = None,
     user_id: str = "default",
     send_emails: bool = False,
+    use_ai_summaries: bool = False,
 ) -> PipelineResult:
     """Run the full EAMA pipeline and return a structured result.
 
     This is the single source of truth for what "running EAMA" means:
-    ingest -> (auto-)configure -> detect -> consolidate -> de-duplicate
-    against history -> report (Excel + PDF) -> draft emails -> (optionally)
-    send emails. Both cli.py and api.py call this directly rather than
-    duplicating any of this logic.
+    ingest -> (auto-)configure -> detect -> consolidate -> (optionally)
+    enhance summaries with AI -> de-duplicate against history -> report
+    (Excel + PDF) -> draft emails -> (optionally) send emails. Both
+    cli.py and api.py call this directly rather than duplicating any
+    of this logic.
 
     user_id scopes alert history so different users/teams uploading the
     same or overlapping data don't suppress each other's "new" alerts.
@@ -111,6 +117,14 @@ def run_pipeline(
     findings.to_csv(output_path, index=False)
 
     business_alerts = create_business_alerts(findings)
+
+    ai_summaries_generated = 0
+    ai_summary_errors: list[str] = []
+
+    if use_ai_summaries:
+        business_alerts, ai_summaries_generated, ai_summary_errors = (
+            enhance_alerts_with_ai_summaries(business_alerts)
+        )
 
     safe_user_id = (
         "".join(ch for ch in user_id if ch.isalnum() or ch in ("-", "_"))
@@ -192,6 +206,8 @@ def run_pipeline(
         all_alert_summaries=all_alert_summaries,
         emails_sent=emails_sent,
         email_send_errors=email_send_errors,
+        ai_summaries_generated=ai_summaries_generated,
+        ai_summary_errors=ai_summary_errors,
         used_auto_config=used_auto_config,
         auto_config_path=auto_config_path,
         auto_detected_date_column=auto_detected_date_column,

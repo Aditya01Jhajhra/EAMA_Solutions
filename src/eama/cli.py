@@ -56,6 +56,17 @@ def main() -> None:
         ),
     )
 
+    parser.add_argument(
+        "--ai-summaries",
+        action="store_true",
+        default=False,
+        help=(
+            "Replace template alert text with AI-generated summaries "
+            "via the Gemini API (requires GEMINI_API_KEY). Falls back "
+            "to the template per-alert on any failure."
+        ),
+    )
+
     args = parser.parse_args()
 
     if not args.config:
@@ -70,6 +81,7 @@ def main() -> None:
         output_path=args.output,
         send_emails=args.send_emails,
         user_id=args.user,
+        use_ai_summaries=args.ai_summaries,
     )
 
     if result.used_auto_config:
@@ -114,6 +126,13 @@ def main() -> None:
         if result.email_send_errors:
             print("Email sending errors:")
             for error in result.email_send_errors:
+                print(f"  - {error}")
+
+    if args.ai_summaries:
+        print(f"Generated {result.ai_summaries_generated:,} AI summary/summaries.")
+        if result.ai_summary_errors:
+            print("AI summary errors (fell back to template text for these):")
+            for error in result.ai_summary_errors:
                 print(f"  - {error}")
 
     if not result.new_alert_summaries:
