@@ -48,6 +48,7 @@ MODULES = [
     "eama.pdf_report",
     "eama.email_drafts",
     "eama.email_sender",
+    "eama.ai_summary",
     "eama.pipeline",
     "eama.cli",
     "eama.api",
